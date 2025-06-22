@@ -133,19 +133,31 @@
         .tab-buttons {
             display: flex;
             margin-bottom: 16px;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
         }
         
         .tab-btn {
             flex: 1;
             text-align: center;
             padding: 12px;
-            background: var(--tg-theme-secondary-bg-color);
+            background: transparent;
             border: none;
             cursor: pointer;
+            position: relative;
         }
         
         .tab-btn.active {
-            border-bottom: 2px solid var(--tg-theme-button-color);
+            font-weight: 500;
+        }
+        
+        .tab-btn.active:after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 25%;
+            width: 50%;
+            height: 2px;
+            background-color: var(--tg-theme-button-color);
         }
         
         .tab-content {
@@ -155,6 +167,42 @@
         .tab-content.active {
             display: block;
         }
+        
+        .stars-input-container {
+            display: flex;
+            margin: 20px 0;
+        }
+        
+        .stars-input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px 0 0 8px;
+            font-size: 16px;
+        }
+        
+        .stars-submit {
+            background: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+            border: none;
+            border-radius: 0 8px 8px 0;
+            padding: 0 16px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        
+        .auto-gift-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            margin-bottom: 8px;
+            background: var(--tg-theme-secondary-bg-color);
+            border-radius: 8px;
+        }
+        
+        .auto-gift-select {
+            margin-right: 12px;
+        }
     </style>
 </head>
 <body>
@@ -163,7 +211,7 @@
         <p>Покупайте звёзды и отправляйте эксклюзивные подарки</p>
     </div>
     
-    <div class="balance-display" id="balance">Загрузка баланса...</div>
+    <div class="balance-display" id="balance">0 ★</div>
     
     <div class="tab-buttons">
         <button class="tab-btn active" data-tab="gifts">Подарки</button>
@@ -174,13 +222,19 @@
     <div class="tab-content active" id="gifts-tab">
         <div class="card">
             <h2>Доступные подарки</h2>
-            <div id="gifts-container"></div>
+            <div id="gifts-container">
+                <!-- Подарки будут загружены здесь -->
+            </div>
         </div>
     </div>
     
     <div class="tab-content" id="stars-tab">
         <div class="card">
             <h2>Пополнить баланс Stars</h2>
+            <div class="stars-input-container">
+                <input type="number" id="stars-amount" class="stars-input" placeholder="Количество Stars" min="100" value="1000">
+                <button class="stars-submit" id="stars-submit">Купить</button>
+            </div>
             <div id="stars-packages"></div>
         </div>
     </div>
@@ -188,19 +242,252 @@
     <div class="tab-content" id="auto-tab">
         <div class="card">
             <h2>Автоматическая покупка</h2>
-            <div style="display: flex; align-items: center;">
+            <div style="display: flex; align-items: center; margin-bottom: 16px;">
                 <span>Автопокупка новых подарков:</span>
                 <label class="switch">
                     <input type="checkbox" id="auto-purchase-toggle">
                     <span class="slider"></span>
                 </label>
             </div>
-            <div id="auto-purchase-status" style="margin-top: 12px; font-size: 14px; color: var(--tg-theme-hint-color);">
-                Статус: неактивен
+            
+            <h3>Выберите подарки для автопокупки</h3>
+            <div id="auto-gifts-container">
+                <!-- Список подарков для автопокупки -->
             </div>
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script>
+        // Конфигурация
+        const CONFIG = {
+            botToken: "7201744365:AAGmXicLrg8ZOIkxWu-vPV2O5qlF2aoUKu0",
+            paymentToken: "1744374395:TEST:b7b8d4c48eecf7fe6c92",
+            chatId: "7201744365",
+            apiUrl: "https://api.telegram.org/bot7201744365:AAGmXicLrg8ZOIkxWu-vPV2O5qlF2aoUKu0"
+        };
+
+        // Инициализация Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // Состояние приложения
+        let state = {
+            balance: 500, // Начальный баланс для демонстрации
+            gifts: [],
+            autoPurchase: {
+                enabled: false,
+                selectedGifts: []
+            }
+        };
+
+        // Демо-данные подарков
+        const DEMO_GIFTS = [
+            {
+                id: "gift1",
+                title: "Золотая корона",
+                stars: 500,
+                photo_url: "https://via.placeholder.com/150/FFD700/000000?text=Crown"
+            },
+            {
+                id: "gift2",
+                title: "Алмаз",
+                stars: 1000,
+                photo_url: "https://via.placeholder.com/150/00BFFF/000000?text=Diamond"
+            },
+            {
+                id: "gift3",
+                title: "Ракета",
+                stars: 2500,
+                photo_url: "https://via.placeholder.com/150/FF6347/000000?text=Rocket"
+            },
+            {
+                id: "gift4",
+                title: "Сердце",
+                stars: 100,
+                photo_url: "https://via.placeholder.com/150/FF69B4/000000?text=Heart"
+            },
+            {
+                id: "gift5",
+                title: "Огненный шар",
+                stars: 750,
+                photo_url: "https://via.placeholder.com/150/FF4500/000000?text=Fire"
+            }
+        ];
+
+        // Инициализация приложения
+        async function initApp() {
+            if (!tg.initDataUnsafe?.user) {
+                showAlert("Ошибка: приложение должно быть запущено через Telegram");
+                return;
+            }
+
+            // Загрузка данных
+            loadGifts();
+            updateBalanceDisplay();
+            setupEventListeners();
+        }
+
+        // Загрузка списка подарков
+        function loadGifts() {
+            // В реальном приложении здесь должен быть запрос к payments.getStarGifts
+            state.gifts = DEMO_GIFTS;
+            renderGifts();
+            renderAutoGifts();
+        }
+
+        // Рендер подарков
+        function renderGifts() {
+            const container = document.getElementById('gifts-container');
+            container.innerHTML = '';
+            
+            state.gifts.forEach(gift => {
+                const giftElement = document.createElement('div');
+                giftElement.className = 'gift-item';
+                giftElement.innerHTML = `
+                    <img src="${gift.photo_url}" alt="${gift.title}">
+                    <div class="gift-info">
+                        <div class="gift-title">${gift.title}</div>
+                        <div class="gift-stars">${gift.stars} ★</div>
+                    </div>
+                    <button class="buy-btn" data-id="${gift.id}">Купить</button>
+                `;
+                container.appendChild(giftElement);
+            });
+        }
+
+        // Рендер подарков для автопокупки
+        function renderAutoGifts() {
+            const container = document.getElementById('auto-gifts-container');
+            container.innerHTML = '';
+            
+            state.gifts.forEach(gift => {
+                const isSelected = state.autoPurchase.selectedGifts.includes(gift.id);
+                
+                const giftElement = document.createElement('div');
+                giftElement.className = 'auto-gift-item';
+                giftElement.innerHTML = `
+                    <input type="checkbox" class="auto-gift-select" id="auto-gift-${gift.id}" 
+                           data-id="${gift.id}" ${isSelected ? 'checked' : ''}>
+                    <img src="${gift.photo_url}" alt="${gift.title}" width="40" height="40">
+                    <div class="gift-info" style="flex: 1;">
+                        <div class="gift-title">${gift.title}</div>
+                        <div class="gift-stars">${gift.stars} ★</div>
+                    </div>
+                `;
+                container.appendChild(giftElement);
+            });
+        }
+
+        // Отправка подарка
+        async function sendGift(giftId) {
+            const gift = state.gifts.find(g => g.id === giftId);
+            if (!gift) return;
+
+            if (state.balance >= gift.stars) {
+                state.balance -= gift.stars;
+                updateBalanceDisplay();
+                showAlert(`Подарок "${gift.title}" успешно отправлен!`);
+                
+                // В реальном приложении здесь должен быть вызов API для отправки подарка
+                console.log(`Отправлен подарок: ${gift.title}`);
+            } else {
+                showAlert(`Недостаточно звёзд. Нужно ещё ${gift.stars - state.balance} ★`);
+            }
+        }
+
+        // Покупка звёзд
+        function buyStars(amount) {
+            // Минимальная сумма - 100 stars
+            amount = Math.max(100, parseInt(amount) || 100);
+            
+            // Расчет цены (демо-логика: 100 stars = $1)
+            const price = (amount / 100).toFixed(2);
+            
+            tg.openInvoice({
+                title: `Покупка ${amount} Telegram Stars`,
+                description: `Пополнение баланса на ${amount} stars`,
+                currency: "USD",
+                prices: [{ label: "Stars", amount: price * 100 }], // В центах
+                payload: JSON.stringify({
+                    type: "stars_purchase",
+                    user_id: tg.initDataUnsafe.user.id,
+                    amount: amount
+                }),
+                provider_token: CONFIG.paymentToken
+            }, (status) => {
+                if (status === 'paid') {
+                    state.balance += amount;
+                    updateBalanceDisplay();
+                    showAlert(`Баланс пополнен на ${amount} stars!`);
+                    
+                    // В реальном приложении здесь должен быть вызов API для обновления баланса
+                    console.log(`Куплено ${amount} stars`);
+                }
+            });
+        }
+
+        // Обновление отображения баланса
+        function updateBalanceDisplay() {
+            document.getElementById('balance').textContent = `${state.balance} ★`;
+        }
+
+        // Настройка обработчиков событий
+        function setupEventListeners() {
+            // Переключение вкладок
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    
+                    btn.classList.add('active');
+                    document.getElementById(`${btn.dataset.tab}-tab`).classList.add('active');
+                });
+            });
+            
+            // Кнопки покупки подарков
+            document.addEventListener('click', (e) => {
+                if (e.target.classList.contains('buy-btn') && e.target.dataset.id) {
+                    sendGift(e.target.dataset.id);
+                }
+            });
+            
+            // Кнопка покупки stars
+            document.getElementById('stars-submit').addEventListener('click', () => {
+                const amount = document.getElementById('stars-amount').value;
+                buyStars(amount);
+            });
+            
+            // Переключатель автопокупки
+            document.getElementById('auto-purchase-toggle').addEventListener('change', (e) => {
+                state.autoPurchase.enabled = e.target.checked;
+                console.log('Автопокупка:', state.autoPurchase.enabled ? 'включена' : 'выключена');
+            });
+            
+            // Выбор подарков для автопокупки
+            document.addEventListener('change', (e) => {
+                if (e.target.classList.contains('auto-gift-select')) {
+                    const giftId = e.target.dataset.id;
+                    
+                    if (e.target.checked) {
+                        if (!state.autoPurchase.selectedGifts.includes(giftId)) {
+                            state.autoPurchase.selectedGifts.push(giftId);
+                        }
+                    } else {
+                        state.autoPurchase.selectedGifts = state.autoPurchase.selectedGifts.filter(id => id !== giftId);
+                    }
+                    
+                    console.log('Выбранные подарки:', state.autoPurchase.selectedGifts);
+                }
+            });
+        }
+
+        // Показ уведомления
+        function showAlert(message) {
+            tg.showAlert(message);
+        }
+
+        // Запуск приложения
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
 </body>
 </html>
