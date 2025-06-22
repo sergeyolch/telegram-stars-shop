@@ -1,5 +1,7 @@
 // Инициализация Telegram WebApp
 const tg = window.Telegram.WebApp;
+const BOT_TOKEN = "7201744365:AAGmXicLrg8ZOIkxWu-vPV2O5qlF2aoUKu0"; // Ваш токен бота
+const TELEGRAM_API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 tg.expand();
 
 // Данные о звёздах
